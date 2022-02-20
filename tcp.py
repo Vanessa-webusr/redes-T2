@@ -36,7 +36,7 @@ class Servidor:
         if (flags & FLAGS_SYN) == FLAGS_SYN:
             # A flag SYN estar setada significa que é um cliente tentando estabelecer uma conexão nova
             # TODO: talvez você precise passar mais coisas para o construtor de conexão
-            conexao = self.conexoes[id_conexao] = Conexao(self, id_conexao)
+            conexao = self.conexoes[id_conexao] = Conexao(self, id_conexao, seq_no)
             # TODO: você precisa fazer o handshake aceitando a conexão. Escolha se você acha melhor
             # fazer aqui mesmo ou dentro da classe Conexao.
 
@@ -50,19 +50,28 @@ class Servidor:
                 self.callback(conexao)
         elif id_conexao in self.conexoes:
             # Passa para a conexão adequada se ela já estiver estabelecida
-            self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
+            passed = self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
+
+            #### Step 2
+            if (passed):
+                rand = int(urandom(2).hex(), 16)
+                segment = make_header(dst_port, src_port, rand, seq_no+len(payload), FLAGS_ACK)
+                response = fix_checksum(segment, dst_addr, src_addr)
+                self.rede.enviar(response, src_addr)
         else:
             print('%s:%d -> %s:%d (pacote associado a conexão desconhecida)' %
                   (src_addr, src_port, dst_addr, dst_port))
 
 
 class Conexao:
-    def __init__(self, servidor, id_conexao):
+    def __init__(self, servidor, id_conexao, seq_no):
         self.servidor = servidor
         self.id_conexao = id_conexao
         self.callback = None
         self.timer = asyncio.get_event_loop().call_later(1, self._exemplo_timer)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
         #self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
+
+        self.cur_seq_no = seq_no + 1
 
     def _exemplo_timer(self):
         # Esta função é só um exemplo e pode ser removida
@@ -73,6 +82,12 @@ class Conexao:
         # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
         print('recebido payload: %r' % payload)
+
+        #### Step 2
+        if (seq_no == self.cur_seq_no):
+            self.cur_seq_no += len(payload)
+            self.callback(self, payload)
+            return True
 
     # Os métodos abaixo fazem parte da API
 
