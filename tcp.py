@@ -2,7 +2,7 @@ import asyncio
 from tcputils import *
 
 from os import urandom
-
+import pdb
 
 class Servidor:
     def __init__(self, rede, porta):
@@ -23,6 +23,10 @@ class Servidor:
         src_port, dst_port, seq_no, ack_no, \
             flags, window_size, checksum, urg_ptr = read_header(segment)
 
+        print('1 seq_no')
+        print(seq_no)
+        print('1 ack_no')
+        print(ack_no)
         if dst_port != self.porta:
             # Ignora segmentos que não são destinados à porta do nosso servidor
             return
@@ -40,24 +44,12 @@ class Servidor:
             # TODO: você precisa fazer o handshake aceitando a conexão. Escolha se você acha melhor
             # fazer aqui mesmo ou dentro da classe Conexao.
 
-            #### Step 1
-            rand = int(urandom(2).hex(), 16)
-            segment = make_header(dst_port, src_port, rand, seq_no+1, FLAGS_SYN | FLAGS_ACK)
-            response = fix_checksum(segment, dst_addr, src_addr)
-            self.rede.enviar(response, src_addr)
-
             if self.callback:
                 self.callback(conexao)
         elif id_conexao in self.conexoes:
             # Passa para a conexão adequada se ela já estiver estabelecida
-            passed = self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
+            self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
 
-            #### Step 2
-            if (passed):
-                rand = int(urandom(2).hex(), 16)
-                segment = make_header(dst_port, src_port, rand, seq_no+len(payload), FLAGS_ACK)
-                response = fix_checksum(segment, dst_addr, src_addr)
-                self.rede.enviar(response, src_addr)
         else:
             print('%s:%d -> %s:%d (pacote associado a conexão desconhecida)' %
                   (src_addr, src_port, dst_addr, dst_port))
@@ -72,6 +64,10 @@ class Conexao:
         #self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
 
         self.cur_seq_no = seq_no + 1
+        self.cur_ack_no = int(urandom(2).hex(), 16)
+
+        #### Step 1
+        self.enviar(None, FLAGS_SYN | FLAGS_ACK)
 
     def _exemplo_timer(self):
         # Esta função é só um exemplo e pode ser removida
@@ -86,8 +82,8 @@ class Conexao:
         #### Step 2
         if (seq_no == self.cur_seq_no):
             self.cur_seq_no += len(payload)
-            self.callback(self, payload)
-            return True
+            # self.callback(self, payload)
+            self.enviar()
 
     # Os métodos abaixo fazem parte da API
 
@@ -98,14 +94,29 @@ class Conexao:
         """
         self.callback = callback
 
-    def enviar(self, dados):
+    def enviar(self, dados=None, flags = FLAGS_ACK):
         """
         Usado pela camada de aplicação para enviar dados
         """
         # TODO: implemente aqui o envio de dados.
         # Chame self.servidor.rede.enviar(segmento, dest_addr) para enviar o segmento
         # que você construir para a camada de rede.
-        pass
+
+        src_addr, src_port, dst_addr, dst_port = self.id_conexao
+
+        print('2 seq_no')
+        print(self.cur_seq_no)
+        print('2 ack_no')
+        print(self.cur_ack_no)
+        pdb.set_trace()
+        segment = make_header(dst_port, src_port, self.cur_ack_no, self.cur_seq_no, flags)
+
+        self.cur_ack_no += len(dados) if dados else 1
+
+        if (dados): segment += dados
+
+        response = fix_checksum(segment, dst_addr, src_addr)
+        self.servidor.rede.enviar(response, src_addr)
 
     def fechar(self):
         """
