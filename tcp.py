@@ -1,6 +1,8 @@
 import asyncio
 from tcputils import *
 
+from os import urandom
+
 
 class Servidor:
     def __init__(self, rede, porta):
@@ -37,6 +39,13 @@ class Servidor:
             conexao = self.conexoes[id_conexao] = Conexao(self, id_conexao)
             # TODO: você precisa fazer o handshake aceitando a conexão. Escolha se você acha melhor
             # fazer aqui mesmo ou dentro da classe Conexao.
+
+            #### Step 1
+            rand = int(urandom(2).hex(), 16)
+            segment = make_header(dst_port, src_port, rand, seq_no+1, FLAGS_SYN | FLAGS_ACK)
+            response = fix_checksum(segment, dst_addr, src_addr)
+            self.rede.enviar(response, src_addr)
+
             if self.callback:
                 self.callback(conexao)
         elif id_conexao in self.conexoes:
