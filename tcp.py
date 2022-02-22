@@ -2,7 +2,6 @@ import asyncio
 from tcputils import *
 
 from os import urandom
-import pdb
 
 class Servidor:
     def __init__(self, rede, porta):
@@ -23,10 +22,6 @@ class Servidor:
         src_port, dst_port, seq_no, ack_no, \
             flags, window_size, checksum, urg_ptr = read_header(segment)
 
-        print('1 seq_no')
-        print(seq_no)
-        print('1 ack_no')
-        print(ack_no)
         if dst_port != self.porta:
             # Ignora segmentos que não são destinados à porta do nosso servidor
             return
@@ -82,7 +77,7 @@ class Conexao:
         #### Step 2
         if (seq_no == self.cur_seq_no):
             self.cur_seq_no += len(payload)
-            # self.callback(self, payload)
+            self.callback(self, payload)
             self.enviar()
 
     # Os métodos abaixo fazem parte da API
@@ -104,11 +99,6 @@ class Conexao:
 
         src_addr, src_port, dst_addr, dst_port = self.id_conexao
 
-        print('2 seq_no')
-        print(self.cur_seq_no)
-        print('2 ack_no')
-        print(self.cur_ack_no)
-        pdb.set_trace()
         segment = make_header(dst_port, src_port, self.cur_ack_no, self.cur_seq_no, flags)
 
         self.cur_ack_no += len(dados) if dados else 1
