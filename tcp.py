@@ -2,6 +2,7 @@ import asyncio
 from tcputils import *
 
 from os import urandom
+from math import ceil
 
 class Servidor:
     def __init__(self, rede, porta):
@@ -72,12 +73,14 @@ class Conexao:
         # TODO: trate aqui o recebimento de segmentos provenientes da camada de rede.
         # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
-        self.last_ack_no = ack_no
+
+        if not hasattr(self, 'last_ack_no'):
+            self.last_ack_no = ack_no
 
         #### Step 2
         if (seq_no == self.cur_seq_no):
             self.cur_seq_no += len(payload)
-            self.cur_ack_no = ack_no + (len(payload) if payload else 0)
+            self.cur_ack_no = self.last_ack_no + (len(payload) if payload else 0)
             self.callback(self, payload)
             self.enviar()
 
@@ -100,13 +103,23 @@ class Conexao:
 
         src_addr, src_port, dst_addr, dst_port = self.id_conexao
 
-        sending_ack_no = self.cur_ack_no if not dados else self.last_ack_no
-        segment = make_header(dst_port, src_port, sending_ack_no, self.cur_seq_no, flags)
+        if dados:
+            size = ceil(len(dados)/MSS)
+            for i in range(size):
+                self.cur_ack_no = self.last_ack_no
+                segment = make_header(dst_port, src_port, self.cur_ack_no, self.cur_seq_no, flags)
 
-        if (dados): segment += dados
+                segment += dados[i*MSS:min((i+1)*MSS, len(dados))]
 
-        response = fix_checksum(segment, dst_addr, src_addr)
-        self.servidor.rede.enviar(response, src_addr)
+                response = fix_checksum(segment, dst_addr, src_addr)
+                self.servidor.rede.enviar(response, src_addr)
+                self.last_ack_no += MSS
+                self.cur_ack_no = self.last_ack_no
+        else:
+            segment = make_header(dst_port, src_port, self.cur_ack_no, self.cur_seq_no, flags)
+            response = fix_checksum(segment, dst_addr, src_addr)
+            self.servidor.rede.enviar(response, src_addr)
+
 
     def fechar(self):
         """
