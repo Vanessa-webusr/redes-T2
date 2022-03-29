@@ -82,20 +82,27 @@ class Conexao:
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
         print('recebido payload: %r' % payload)
         
-        #### Step 2: verificar número de sequência esperado
-        #A verificação e o incremento de numero esperado estão corretos
-        #TODO: falta chamar a callback(self,dados)
 
-        if(seq_no == self.expected_seq_no):
-          self.expected_seq_no += (len(payload) if payload else 0)
-          self.callback(self, payload)
-          self.my_len_seq_no = ack_no
-          if((flags & FLAGS_ACK == FLAGS_ACK) & (len(payload) > 0)):
+        if (flags & FLAGS_FIN == FLAGS_FIN):
+            self.callback(self, b'')
+            self.my_len_seq_no = ack_no
             src_addr, src_port, dst_addr, dst_port = self.id_conexao   
-            segment = make_header(dst_port, src_port, self.seq_enviar, self.expected_seq_no, flags)
+            segment = make_header(dst_port, src_port, self.seq_enviar, self.expected_seq_no + 1, flags)
             response = fix_checksum(segment, dst_addr, src_addr)
-            print('rdt_rcv')
             self.servidor.rede.enviar(response, src_addr)
+        elif (seq_no == self.expected_seq_no):
+            #### Step 2: verificar número de sequência esperado
+            #A verificação e o incremento de numero esperado estão corretos
+            #TODO: falta chamar a callback(self,dados)
+            self.expected_seq_no += (len(payload) if payload else 0)
+            self.callback(self, payload)
+            self.my_len_seq_no = ack_no
+            if((flags & FLAGS_ACK == FLAGS_ACK) & (len(payload) > 0)):
+                src_addr, src_port, dst_addr, dst_port = self.id_conexao   
+                segment = make_header(dst_port, src_port, self.seq_enviar, self.expected_seq_no, flags)
+                response = fix_checksum(segment, dst_addr, src_addr)
+                print('rdt_rcv')
+                self.servidor.rede.enviar(response, src_addr)
           
      
     # Os métodos abaixo fazem parte da API
@@ -129,5 +136,9 @@ class Conexao:
         Usado pela camada de aplicação para fechar a conexão
         """
         # TODO: implemente aqui o fechamento de conexão
-        pass
+        self.seq_enviar = self.my_len_seq_no
+        src_addr, src_port, dst_addr, dst_port = self.id_conexao   
+        segment = make_header(dst_port, src_port, self.seq_enviar, self.expected_seq_no + 1, FLAGS_FIN)
+        response = fix_checksum(segment, dst_addr, src_addr)
+        self.servidor.rede.enviar(response, src_addr)
 
