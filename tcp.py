@@ -70,7 +70,6 @@ class Conexao:
 
         self.expected_seq_no = seq_no + 1
         self.seq_enviar = int(urandom(2).hex(), 16)
-       # self.my_len_seq_no = 0
         self.my_len_seq_no = ack_no
         
     def _exemplo_timer(self):
@@ -82,13 +81,10 @@ class Conexao:
         # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
         print('recebido payload: %r' % payload)
-        #print(len(payload))
-        #print(seq_no)
-        #print(self.expected_seq_no)
         
-      #### Step 2: verificar número de sequência esperado
-      #A verificação e o incremento de numero esperado estão corretos
-      #TODO: falta chamar a callback(self,dados)
+        #### Step 2: verificar número de sequência esperado
+        #A verificação e o incremento de numero esperado estão corretos
+        #TODO: falta chamar a callback(self,dados)
 
         if(seq_no == self.expected_seq_no):
           self.expected_seq_no += (len(payload) if payload else 0)
@@ -100,8 +96,6 @@ class Conexao:
             response = fix_checksum(segment, dst_addr, src_addr)
             print('rdt_rcv')
             self.servidor.rede.enviar(response, src_addr)
-            
-        #  print(self.cur_ack_no)
           
      
     # Os métodos abaixo fazem parte da API
@@ -121,21 +115,14 @@ class Conexao:
         # Chame self.servidor.rede.enviar(segmento, dest_addr) para enviar o segmento
         # que você construir para a camada de rede.
         src_addr, src_port, dst_addr, dst_port = self.id_conexao  
-        #if dados:
-          #segment = make_header(dst_port, src_port, self.seq_enviar, self.expected_seq_no, FLAGS_ACK)
-          #response = fix_checksum(segment, dst_addr, src_addr)
-          #self.servidor.rede.enviar(response, src_addr)
         size = ceil(len(dados)/MSS)
         for i in range(size):
-            #print(i)
             self.seq_enviar = self.my_len_seq_no
             segment = make_header(dst_port, src_port, self.seq_enviar, self.expected_seq_no, flags = FLAGS_ACK)           
             segment += (dados[i*MSS:min((i+1)*MSS, len(dados))])
             self.my_len_seq_no += len(dados[i*MSS:min((i+1)*MSS, len(dados))])
             response = fix_checksum(segment, dst_addr, src_addr)
             self.servidor.rede.enviar(response, src_addr)
-            #self.seq_enviar = self.my_len_seq_no
-        #print('my_len_seq_no:', self.my_len_seq_no)      
 
     def fechar(self):
         """
