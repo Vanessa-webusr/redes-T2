@@ -3,6 +3,7 @@ from tcputils import *
 
 from os import urandom
 from math import ceil
+from collections import deque
 
 class Servidor:
     def __init__(self, rede, porta):
@@ -65,16 +66,25 @@ class Conexao:
         self.servidor = servidor
         self.id_conexao = id_conexao
         self.callback = None
-        self.timer = asyncio.get_event_loop().call_later(1, self._exemplo_timer)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
+        self.timer = None
+        #self.timer = asyncio.get_event_loop().call_later(1, self._timeout)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
         #self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
 
         self.expected_seq_no = seq_no + 1
         self.seq_enviar = int(urandom(2).hex(), 16)
         self.my_len_seq_no = ack_no
+
+        self.seg_queue = deque()
         
-    def _exemplo_timer(self):
+    def _timeout(self):
         # Esta função é só um exemplo e pode ser removida
-        print('Este é um exemplo de como fazer um timer')
+        self.timer = None
+
+        if len(self.seg_queue):
+            seq_no, segment, addr = self.seg_queue.popleft()
+            self.seg_queue.appendleft((seq_no, segment, addr))
+            self.servidor.rede.enviar(segment, addr)
+            self.timer = asyncio.get_event_loop().call_later(1, self._timeout)
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
         # TODO: trate aqui o recebimento de segmentos provenientes da camada de rede.
@@ -92,18 +102,23 @@ class Conexao:
             self.servidor.rede.enviar(response, src_addr)
         elif (seq_no == self.expected_seq_no):
             #### Step 2: verificar número de sequência esperado
-            #A verificação e o incremento de numero esperado estão corretos
-            #TODO: falta chamar a callback(self,dados)
             self.expected_seq_no += (len(payload) if payload else 0)
             self.callback(self, payload)
             self.my_len_seq_no = ack_no
-            if((flags & FLAGS_ACK == FLAGS_ACK) & (len(payload) > 0)):
-                src_addr, src_port, dst_addr, dst_port = self.id_conexao   
-                segment = make_header(dst_port, src_port, self.seq_enviar, self.expected_seq_no, flags)
-                response = fix_checksum(segment, dst_addr, src_addr)
-                print('rdt_rcv')
-                self.servidor.rede.enviar(response, src_addr)
-          
+            if (flags & FLAGS_ACK == FLAGS_ACK):
+                if (len(payload) > 0):
+                    src_addr, src_port, dst_addr, dst_port = self.id_conexao
+                    segment = make_header(dst_port, src_port, self.seq_enviar, self.expected_seq_no, flags)
+                    response = fix_checksum(segment, dst_addr, src_addr)
+                    self.servidor.rede.enviar(response, src_addr)
+                
+                if (self.timer != None):
+                   self.timer.cancel()
+                   self.timer = None
+                   self.seg_queue.popleft()
+
+                if len(self.seg_queue):
+                    self.timer = asyncio.get_event_loop().call_later(1, self._timeout)
      
     # Os métodos abaixo fazem parte da API
 
@@ -130,6 +145,10 @@ class Conexao:
             self.my_len_seq_no += len(dados[i*MSS:min((i+1)*MSS, len(dados))])
             response = fix_checksum(segment, dst_addr, src_addr)
             self.servidor.rede.enviar(response, src_addr)
+
+            self.seg_queue.append((self.seq_enviar, response, src_addr))
+            if (self.timer == None):
+                self.timer = asyncio.get_event_loop().call_later(1, self._timeout)
 
     def fechar(self):
         """
