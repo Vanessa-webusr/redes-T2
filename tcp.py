@@ -4,6 +4,7 @@ from tcputils import *
 from os import urandom
 from math import ceil
 from collections import deque
+import time
 
 class Servidor:
     def __init__(self, rede, porta):
@@ -67,7 +68,7 @@ class Conexao:
         self.id_conexao = id_conexao
         self.callback = None
         self.timer = None
-        #self.timer = asyncio.get_event_loop().call_later(1, self._timeout)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
+        #self.timer = asyncio.get_event_loop().call_later(self.TimeoutInterval, self._timeout)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
         #self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
 
         self.expected_seq_no = seq_no + 1
@@ -75,16 +76,22 @@ class Conexao:
         self.my_len_seq_no = ack_no
 
         self.seg_queue = deque()
+
+        self.alreadyChecked = False
+        self.SampleRTT = 1
+        self.EstimatedRTT = self.SampleRTT
+        self.DevRTT = self.SampleRTT/2
+        self.TimeoutInterval = 1
         
     def _timeout(self):
         # Esta função é só um exemplo e pode ser removida
         self.timer = None
 
         if len(self.seg_queue):
-            seq_no, segment, addr = self.seg_queue.popleft()
-            self.seg_queue.appendleft((seq_no, segment, addr))
+            _, segment, addr = self.seg_queue.popleft()
+            self.seg_queue.appendleft((0, segment, addr))
             self.servidor.rede.enviar(segment, addr)
-            self.timer = asyncio.get_event_loop().call_later(1, self._timeout)
+            self.timer = asyncio.get_event_loop().call_later(self.TimeoutInterval, self._timeout)
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
         # TODO: trate aqui o recebimento de segmentos provenientes da camada de rede.
@@ -113,12 +120,23 @@ class Conexao:
                     self.servidor.rede.enviar(response, src_addr)
                 
                 if (self.timer != None):
-                   self.timer.cancel()
-                   self.timer = None
-                   self.seg_queue.popleft()
+                    self.timer.cancel()
+                    self.timer = None
+                    firstTime, _, _ = self.seg_queue.popleft()
+                    if firstTime != 0:
+                        self.SampleRTT = time.time() - firstTime
+                        if self.alreadyChecked == False:
+                            self.alreadyChecked = True
+                            self.EstimatedRTT = self.SampleRTT
+                            self.DevRTT = self.SampleRTT/2
+                        else:
+                            self.EstimatedRTT = (1 - 0.125) * self.EstimatedRTT + 0.125 * self.SampleRTT
+                            self.DevRTT = (1 - 0.25) * self.DevRTT + 0.25 * abs(self.SampleRTT - self.EstimatedRTT)
+                        self.TimeoutInterval = self.EstimatedRTT + 4 * self.DevRTT
+
 
                 if len(self.seg_queue):
-                    self.timer = asyncio.get_event_loop().call_later(1, self._timeout)
+                    self.timer = asyncio.get_event_loop().call_later(self.TimeoutInterval, self._timeout)
      
     # Os métodos abaixo fazem parte da API
 
@@ -146,9 +164,9 @@ class Conexao:
             response = fix_checksum(segment, dst_addr, src_addr)
             self.servidor.rede.enviar(response, src_addr)
 
-            self.seg_queue.append((self.seq_enviar, response, src_addr))
+            self.seg_queue.append((time.time(), response, src_addr))
             if (self.timer == None):
-                self.timer = asyncio.get_event_loop().call_later(1, self._timeout)
+                self.timer = asyncio.get_event_loop().call_later(self.TimeoutInterval, self._timeout)
 
     def fechar(self):
         """
