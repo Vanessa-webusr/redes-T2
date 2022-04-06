@@ -139,8 +139,8 @@ class Conexao:
 
                     # atualmente estamos considerando que cada confirmação é para um segmento, o que não é o certo
 
-                    firstTime, segmento, _, _ = self.seg_sended_queue.popleft()
-                    self.seg_sended_length -= 1  # -= len(segmento)
+                    firstTime, segmento, _, len_dados = self.seg_sended_queue.popleft()
+                    self.seg_sended_length -= len_dados  # -= len(segmento)
                     print('ack received, new length is ',
                           self.seg_sended_length)
 
@@ -162,7 +162,7 @@ class Conexao:
                         self.servidor.rede.enviar(response, src_addr)
                         self.seg_sended_queue.append(
                             (time.time(), response, src_addr, len_dados))
-                        self.seg_sended_length += 1  # += len(response)
+                        self.seg_sended_length += len_dados  # += len(response)
                         print('still have some waiting, new length is ',
                               self.seg_sended_length)
 
@@ -197,15 +197,16 @@ class Conexao:
             segment = make_header(
                 dst_port, src_port, self.seq_enviar, self.expected_seq_no, flags=FLAGS_ACK)
             segment += (dados[i*MSS:min((i+1)*MSS, len(dados))])
-            self.my_len_seq_no += len(dados[i*MSS:min((i+1)*MSS, len(dados))])
+            len_dados = len(dados[i*MSS:min((i+1)*MSS, len(dados))])
+            self.my_len_seq_no += len_dados
             response = fix_checksum(segment, dst_addr, src_addr)
 
-            print(self.win_size / MSS, self.seg_sended_length, len(response) / MSS)
-            if ((self.seg_sended_length + 1) * MSS < self.win_size):
+            print('_', self.seg_sended_length, len_dados, self.win_size)
+            if (self.seg_sended_length + len_dados < self.win_size):
                 self.servidor.rede.enviar(response, src_addr)
                 self.seg_sended_queue.append(
-                    (time.time(), response, src_addr, len(dados)))
-                self.seg_sended_length += 1  # += len(response)
+                    (time.time(), response, src_addr, len_dados))
+                self.seg_sended_length += len_dados  # += len(response)
                 if (self.timer == None):
                     self.timer = asyncio.get_event_loop().call_later(
                         self.TimeoutInterval, self._timeout)
@@ -213,7 +214,7 @@ class Conexao:
                       len(self.seg_sended_queue))
             else:
                 print('waiting length is now ', len(self.seg_waiting_queue))
-                self.seg_waiting_queue.append((response, src_addr, len(dados)))
+                self.seg_waiting_queue.append((response, src_addr, len_dados))
 
     def fechar(self):
         """
