@@ -6,6 +6,7 @@ from math import ceil
 from collections import deque
 import time
 
+
 class Servidor:
     def __init__(self, rede, porta):
         self.rede = rede
@@ -32,21 +33,23 @@ class Servidor:
             print('descartando segmento com checksum incorreto')
             return
 
-        payload = segment[4*(flags>>12):]
+        payload = segment[4*(flags >> 12):]
         id_conexao = (src_addr, src_port, dst_addr, dst_port)
 
         if (flags & FLAGS_SYN) == FLAGS_SYN:
             # A flag SYN estar setada significa que é um cliente tentando estabelecer uma conexão nova
             # TODO: talvez você precise passar mais coisas para o construtor de conexão
-            conexao = self.conexoes[id_conexao] = Conexao(self, id_conexao, seq_no, ack_no)
+            conexao = self.conexoes[id_conexao] = Conexao(
+                self, id_conexao, seq_no, ack_no)
             # TODO: você precisa fazer o handshake aceitando a conexão. Escolha se você acha melhor
             # fazer aqui mesmo ou dentro da classe Conexao.
 
-            #### Step 1
+            # Step 1
            # Acho que pode deixar a verificação do passo 1 aqui mesmo
             seq_enviar = int(urandom(2).hex(), 16)
             ack_enviar = seq_no + 1
-            segment = make_header(dst_port, src_port, seq_enviar, ack_enviar, FLAGS_SYN | FLAGS_ACK)
+            segment = make_header(
+                dst_port, src_port, seq_enviar, ack_enviar, FLAGS_SYN | FLAGS_ACK)
             response = fix_checksum(segment, dst_addr, src_addr)
             self.rede.enviar(response, src_addr)
 
@@ -68,8 +71,8 @@ class Conexao:
         self.id_conexao = id_conexao
         self.callback = None
         self.timer = None
-        #self.timer = asyncio.get_event_loop().call_later(self.TimeoutInterval, self._timeout)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
-        #self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
+        # self.timer = asyncio.get_event_loop().call_later(self.TimeoutInterval, self._timeout)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
+        # self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
 
         self.expected_seq_no = seq_no + 1
         self.seq_enviar = int(urandom(2).hex(), 16)
@@ -86,44 +89,46 @@ class Conexao:
         self.EstimatedRTT = self.SampleRTT
         self.DevRTT = self.SampleRTT/2
         self.TimeoutInterval = 1
-        
+
     def _timeout(self):
         # Esta função é só um exemplo e pode ser removida
         self.timer = None
         self.win_size /= 2
 
         if len(self.seg_sended_queue):
-            _, segment, addr = self.seg_sended_queue.popleft()
-            self.seg_sended_queue.appendleft((0, segment, addr))
+            _, segment, addr, len_dados = self.seg_sended_queue.popleft()
+            self.seg_sended_queue.appendleft((0, segment, addr, len_dados))
             self.servidor.rede.enviar(segment, addr)
-            self.timer = asyncio.get_event_loop().call_later(self.TimeoutInterval, self._timeout)
+            self.timer = asyncio.get_event_loop().call_later(
+                self.TimeoutInterval, self._timeout)
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
         # TODO: trate aqui o recebimento de segmentos provenientes da camada de rede.
         # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
         print('recebido payload: %r' % payload)
-        
 
         if (flags & FLAGS_FIN == FLAGS_FIN):
             self.callback(self, b'')
             self.my_len_seq_no = ack_no
-            src_addr, src_port, dst_addr, dst_port = self.id_conexao   
-            segment = make_header(dst_port, src_port, self.seq_enviar, self.expected_seq_no + 1, flags)
+            src_addr, src_port, dst_addr, dst_port = self.id_conexao
+            segment = make_header(
+                dst_port, src_port, self.seq_enviar, self.expected_seq_no + 1, flags)
             response = fix_checksum(segment, dst_addr, src_addr)
             self.servidor.rede.enviar(response, src_addr)
         elif (seq_no == self.expected_seq_no):
-            #### Step 2: verificar número de sequência esperado
+            # Step 2: verificar número de sequência esperado
             self.expected_seq_no += (len(payload) if payload else 0)
             self.callback(self, payload)
             self.my_len_seq_no = ack_no
             if (flags & FLAGS_ACK == FLAGS_ACK):
                 if (len(payload) > 0):
                     src_addr, src_port, dst_addr, dst_port = self.id_conexao
-                    segment = make_header(dst_port, src_port, self.seq_enviar, self.expected_seq_no, flags)
+                    segment = make_header(
+                        dst_port, src_port, self.seq_enviar, self.expected_seq_no, flags)
                     response = fix_checksum(segment, dst_addr, src_addr)
                     self.servidor.rede.enviar(response, src_addr)
-                
+
                 if (self.timer != None):
                     self.timer.cancel()
                     self.timer = None
@@ -134,9 +139,10 @@ class Conexao:
 
                     # atualmente estamos considerando que cada confirmação é para um segmento, o que não é o certo
 
-                    firstTime, segmento, _ = self.seg_sended_queue.popleft()
-                    self.seg_sended_length -= 1 # -= len(segmento)
-                    print('ack received, new length is ', self.seg_sended_length)
+                    firstTime, segmento, _, _ = self.seg_sended_queue.popleft()
+                    self.seg_sended_length -= 1  # -= len(segmento)
+                    print('ack received, new length is ',
+                          self.seg_sended_length)
 
                     if firstTime != 0:
                         self.SampleRTT = time.time() - firstTime
@@ -145,23 +151,28 @@ class Conexao:
                             self.EstimatedRTT = self.SampleRTT
                             self.DevRTT = self.SampleRTT/2
                         else:
-                            self.EstimatedRTT = (1 - 0.125) * self.EstimatedRTT + 0.125 * self.SampleRTT
-                            self.DevRTT = (1 - 0.25) * self.DevRTT + 0.25 * abs(self.SampleRTT - self.EstimatedRTT)
+                            self.EstimatedRTT = (
+                                1 - 0.125) * self.EstimatedRTT + 0.125 * self.SampleRTT
+                            self.DevRTT = (1 - 0.25) * self.DevRTT + 0.25 * \
+                                abs(self.SampleRTT - self.EstimatedRTT)
                         self.TimeoutInterval = self.EstimatedRTT + 4 * self.DevRTT
 
                     if len(self.seg_waiting_queue):
-                        response, src_addr = self.seg_waiting_queue.popleft()
+                        response, src_addr, len_dados = self.seg_waiting_queue.popleft()
                         self.servidor.rede.enviar(response, src_addr)
-                        self.seg_sended_queue.append((time.time(), response, src_addr))
-                        self.seg_sended_length += 1# += len(response)
-                        print('still have some waiting, new length is ', self.seg_sended_length)
+                        self.seg_sended_queue.append(
+                            (time.time(), response, src_addr, len_dados))
+                        self.seg_sended_length += 1  # += len(response)
+                        print('still have some waiting, new length is ',
+                              self.seg_sended_length)
 
                 if len(self.seg_sended_queue):
-                    self.timer = asyncio.get_event_loop().call_later(self.TimeoutInterval, self._timeout)
+                    self.timer = asyncio.get_event_loop().call_later(
+                        self.TimeoutInterval, self._timeout)
                 else:
                     self.win_size += MSS
                     # deveria enviar quem está esperando? NÃO, SE TODOS QUE FORAM ENVIADOS FORAM CONFIRMADOS, NÃO TEM NENHUM ESPERANDO DÃAA
-     
+
     # Os métodos abaixo fazem parte da API
 
     def registrar_recebedor(self, callback):
@@ -179,11 +190,12 @@ class Conexao:
         # Chame self.servidor.rede.enviar(segmento, dest_addr) para enviar o segmento
         # que você construir para a camada de rede.
         print('enviando payload:', len(dados))
-        src_addr, src_port, dst_addr, dst_port = self.id_conexao  
+        src_addr, src_port, dst_addr, dst_port = self.id_conexao
         size = ceil(len(dados)/MSS)
         for i in range(size):
             self.seq_enviar = self.my_len_seq_no
-            segment = make_header(dst_port, src_port, self.seq_enviar, self.expected_seq_no, flags = FLAGS_ACK)           
+            segment = make_header(
+                dst_port, src_port, self.seq_enviar, self.expected_seq_no, flags=FLAGS_ACK)
             segment += (dados[i*MSS:min((i+1)*MSS, len(dados))])
             self.my_len_seq_no += len(dados[i*MSS:min((i+1)*MSS, len(dados))])
             response = fix_checksum(segment, dst_addr, src_addr)
@@ -191,14 +203,17 @@ class Conexao:
             print(self.win_size / MSS, self.seg_sended_length, len(response) / MSS)
             if ((self.seg_sended_length + 1) * MSS < self.win_size):
                 self.servidor.rede.enviar(response, src_addr)
-                self.seg_sended_queue.append((time.time(), response, src_addr))
-                self.seg_sended_length += 1 # += len(response)
+                self.seg_sended_queue.append(
+                    (time.time(), response, src_addr, len(dados)))
+                self.seg_sended_length += 1  # += len(response)
                 if (self.timer == None):
-                    self.timer = asyncio.get_event_loop().call_later(self.TimeoutInterval, self._timeout)
-                print('sended length is now ', self.seg_sended_length, len(self.seg_sended_queue))
+                    self.timer = asyncio.get_event_loop().call_later(
+                        self.TimeoutInterval, self._timeout)
+                print('sended length is now ', self.seg_sended_length,
+                      len(self.seg_sended_queue))
             else:
                 print('waiting length is now ', len(self.seg_waiting_queue))
-                self.seg_waiting_queue.append((response, src_addr))
+                self.seg_waiting_queue.append((response, src_addr, len(dados)))
 
     def fechar(self):
         """
@@ -206,8 +221,8 @@ class Conexao:
         """
         # TODO: implemente aqui o fechamento de conexão
         self.seq_enviar = self.my_len_seq_no
-        src_addr, src_port, dst_addr, dst_port = self.id_conexao   
-        segment = make_header(dst_port, src_port, self.seq_enviar, self.expected_seq_no + 1, FLAGS_FIN)
+        src_addr, src_port, dst_addr, dst_port = self.id_conexao
+        segment = make_header(
+            dst_port, src_port, self.seq_enviar, self.expected_seq_no + 1, FLAGS_FIN)
         response = fix_checksum(segment, dst_addr, src_addr)
         self.servidor.rede.enviar(response, src_addr)
-
