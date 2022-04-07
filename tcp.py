@@ -82,7 +82,7 @@ class Conexao:
         self.seg_sended_length = 0
         self.seg_waiting_queue = deque()
 
-        self.win_size = 1 * MSS
+        self.win_size = 2 * MSS
 
         self.alreadyChecked = False
         self.SampleRTT = 1
@@ -129,6 +129,8 @@ class Conexao:
                     response = fix_checksum(segment, dst_addr, src_addr)
                     self.servidor.rede.enviar(response, src_addr)
 
+                a = self.seg_sended_length > 0
+
                 if (self.timer != None):
                     self.timer.cancel()
                     self.timer = None
@@ -138,11 +140,21 @@ class Conexao:
                     # a confirmação que um segmento foi recebido pode ser pulada caso o proximo segmento já tenha sido recebido também, nesse caso, só o último segmento é confirmado como recebido
 
                     # atualmente estamos considerando que cada confirmação é para um segmento, o que não é o certo
+                    print('-1', len(self.seg_waiting_queue),
+                          len(self.seg_sended_queue))
+                    print(self.seg_sended_length, self.win_size)
 
-                    firstTime, segmento, _, len_dados = self.seg_sended_queue.popleft()
-                    self.seg_sended_length -= len_dados  # -= len(segmento)
-                    print('ack received, new length is ',
-                          self.seg_sended_length)
+
+                    while len(self.seg_sended_queue):
+                        firstTime, segmento, _, len_dados = self.seg_sended_queue.popleft()
+                        self.seg_sended_length -= len_dados
+                        _, _, seq, _, _, _, _, _ = read_header(segmento)
+                        print('ack received, new length is ',
+                            self.seg_sended_length)
+                        print('+', seq, ack_no)
+
+                        if seq == ack_no:
+                            break
 
                     if firstTime != 0:
                         self.SampleRTT = time.time() - firstTime
@@ -157,21 +169,32 @@ class Conexao:
                                 abs(self.SampleRTT - self.EstimatedRTT)
                         self.TimeoutInterval = self.EstimatedRTT + 4 * self.DevRTT
 
-                    if len(self.seg_waiting_queue):
+                    while len(self.seg_waiting_queue):
                         response, src_addr, len_dados = self.seg_waiting_queue.popleft()
+
+                        if self.seg_sended_length + len_dados > self.win_size:
+                            self.seg_waiting_queue.appendleft((response, src_addr, len_dados))
+                            break
+
                         self.servidor.rede.enviar(response, src_addr)
-                        self.seg_sended_queue.append(
-                            (time.time(), response, src_addr, len_dados))
-                        self.seg_sended_length += len_dados  # += len(response)
+                        self.seg_sended_queue.append((time.time(), response, src_addr, len_dados))
+                        self.seg_sended_length += len_dados
                         print('still have some waiting, new length is ',
                               self.seg_sended_length)
+
+                print('-2', len(self.seg_waiting_queue), len(self.seg_sended_queue))
+                print(self.seg_sended_length, self.win_size)
 
                 if len(self.seg_sended_queue):
                     self.timer = asyncio.get_event_loop().call_later(
                         self.TimeoutInterval, self._timeout)
-                else:
+                # else:
+                    # self.win_size += MSS
+
+                b = self.seg_sended_length == 0
+                if a == True and b == True:
                     self.win_size += MSS
-                    # deveria enviar quem está esperando? NÃO, SE TODOS QUE FORAM ENVIADOS FORAM CONFIRMADOS, NÃO TEM NENHUM ESPERANDO DÃAA
+                    print('new win size', MSS)
 
     # Os métodos abaixo fazem parte da API
 
