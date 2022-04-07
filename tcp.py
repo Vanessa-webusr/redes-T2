@@ -94,6 +94,8 @@ class Conexao:
         # Esta função é só um exemplo e pode ser removida
         self.timer = None
         self.win_size /= 2
+        print("timeout")
+        print('new win size', self.win_size)
 
         if len(self.seg_sended_queue):
             _, segment, addr, len_dados = self.seg_sended_queue.popleft()
@@ -169,18 +171,7 @@ class Conexao:
                                 abs(self.SampleRTT - self.EstimatedRTT)
                         self.TimeoutInterval = self.EstimatedRTT + 4 * self.DevRTT
 
-                    while len(self.seg_waiting_queue):
-                        response, src_addr, len_dados = self.seg_waiting_queue.popleft()
-
-                        if self.seg_sended_length + len_dados > self.win_size:
-                            self.seg_waiting_queue.appendleft((response, src_addr, len_dados))
-                            break
-
-                        self.servidor.rede.enviar(response, src_addr)
-                        self.seg_sended_queue.append((time.time(), response, src_addr, len_dados))
-                        self.seg_sended_length += len_dados
-                        print('still have some waiting, new length is ',
-                              self.seg_sended_length)
+                    
 
                 print('-2', len(self.seg_waiting_queue), len(self.seg_sended_queue))
                 print(self.seg_sended_length, self.win_size)
@@ -194,7 +185,26 @@ class Conexao:
                 b = self.seg_sended_length == 0
                 if a == True and b == True:
                     self.win_size += MSS
-                    print('new win size', MSS)
+                    print('a:', a, 'b:', b)
+                    print('new win size', self.win_size)
+                    
+                while len(self.seg_waiting_queue):
+                        response, src_addr, len_dados = self.seg_waiting_queue.popleft()
+
+                        if self.seg_sended_length + len_dados > self.win_size:
+                            self.seg_waiting_queue.appendleft((response, src_addr, len_dados))
+                            print('len:', self.seg_sended_length + len_dados, self.win_size)
+                            print('IF')
+                            break
+                       
+                        self.seg_sended_length += len_dados
+                        self.servidor.rede.enviar(response, src_addr)
+                        self.seg_sended_queue.append((time.time(), response, src_addr, len_dados))
+                          
+                        print('still have some waiting, new length is ',
+                              self.seg_sended_length)
+
+                        
 
     # Os métodos abaixo fazem parte da API
 
