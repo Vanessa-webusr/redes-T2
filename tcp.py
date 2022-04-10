@@ -30,7 +30,6 @@ class Servidor:
             # Ignora segmentos que não são destinados à porta do nosso servidor
             return
         if not self.rede.ignore_checksum and calc_checksum(segment, src_addr, dst_addr) != 0:
-            print('descartando segmento com checksum incorreto')
             return
 
         payload = segment[4*(flags >> 12):]
@@ -57,7 +56,6 @@ class Servidor:
                 self.callback(conexao)
         elif id_conexao in self.conexoes:
             # Passa para a conexão adequada se ela já estiver estabelecida
-            #print('ack:', ack_no)
             self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
 
         else:
@@ -94,8 +92,6 @@ class Conexao:
         # Esta função é só um exemplo e pode ser removida
         self.timer = None
         self.win_size /= 2
-        print("timeout")
-        print('new win size', self.win_size)
 
         if len(self.seg_sended_queue):
             _, segment, addr, len_dados = self.seg_sended_queue.popleft()
@@ -108,8 +104,6 @@ class Conexao:
         # TODO: trate aqui o recebimento de segmentos provenientes da camada de rede.
         # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
-        print('recebido payload: %r' % payload)
-        print('=========== ack_no', ack_no)
 
         if (flags & FLAGS_FIN == FLAGS_FIN):
             self.callback(self, b'')
@@ -143,18 +137,12 @@ class Conexao:
                     # a confirmação que um segmento foi recebido pode ser pulada caso o proximo segmento já tenha sido recebido também, nesse caso, só o último segmento é confirmado como recebido
 
                     # atualmente estamos considerando que cada confirmação é para um segmento, o que não é o certo
-                    print('-1', len(self.seg_waiting_queue),
-                          len(self.seg_sended_queue))
-                    print(self.seg_sended_length, self.win_size)
 
 
                     while len(self.seg_sended_queue):
                         firstTime, segmento, _, len_dados = self.seg_sended_queue.popleft()
                         self.seg_sended_length -= len_dados
                         _, _, seq, _, _, _, _, _ = read_header(segmento)
-                        print('ack received, new length is ',
-                            self.seg_sended_length)
-                        print('+', seq, ack_no)
 
                         if seq == ack_no:
                             break
@@ -172,38 +160,22 @@ class Conexao:
                                 abs(self.SampleRTT - self.EstimatedRTT)
                         self.TimeoutInterval = self.EstimatedRTT + 4 * self.DevRTT
 
-                    
-                    
-
-                    
-
-                print('-2', len(self.seg_waiting_queue), len(self.seg_sended_queue))
-                print(self.seg_sended_length, self.win_size)
-
 
                 b = self.seg_sended_length == 0
                 if a == True and b == True:
                     self.win_size += MSS
-                    print('a:', a, 'b:', b)
-                    print('new win size', self.win_size)
                 while len(self.seg_waiting_queue):
                     response, src_addr, len_dados = self.seg_waiting_queue.popleft()
 
                     if self.seg_sended_length + len_dados > self.win_size:
                         self.seg_waiting_queue.appendleft(
                             (response, src_addr, len_dados))
-                        print('len:', self.seg_sended_length +
-                                len_dados, self.win_size)
-                        print('IF')
                         break
 
                     self.seg_sended_length += len_dados
                     self.servidor.rede.enviar(response, src_addr)
                     self.seg_sended_queue.append(
                         (time.time(), response, src_addr, len_dados))
-
-                    print('still have some waiting, new length is ',
-                            self.seg_sended_length)
 
                 if len(self.seg_sended_queue):
                     self.timer = asyncio.get_event_loop().call_later(
@@ -228,7 +200,6 @@ class Conexao:
         # TODO: implemente aqui o envio de dados.
         # Chame self.servidor.rede.enviar(segmento, dest_addr) para enviar o segmento
         # que você construir para a camada de rede.
-        print('enviando payload:', len(dados))
         src_addr, src_port, dst_addr, dst_port = self.id_conexao
         size = ceil(len(dados)/MSS)
         for i in range(size):
@@ -240,7 +211,6 @@ class Conexao:
             self.my_len_seq_no += len_dados
             response = fix_checksum(segment, dst_addr, src_addr)
 
-            print('_', self.seg_sended_length, len_dados, self.win_size)
             if (self.seg_sended_length + len_dados <= self.win_size):
                 self.servidor.rede.enviar(response, src_addr)
                 self.seg_sended_queue.append(
@@ -249,10 +219,7 @@ class Conexao:
                 if (self.timer == None):
                     self.timer = asyncio.get_event_loop().call_later(
                         self.TimeoutInterval, self._timeout)
-                print('sended length is now ', self.seg_sended_length,
-                      len(self.seg_sended_queue))
             else:
-                print('waiting length is now ', len(self.seg_waiting_queue))
                 self.seg_waiting_queue.append((response, src_addr, len_dados))
 
     def fechar(self):
