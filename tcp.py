@@ -82,7 +82,7 @@ class Conexao:
         self.seg_sended_length = 0
         self.seg_waiting_queue = deque()
 
-        self.win_size = 2 * MSS
+        self.win_size = 1 * MSS
 
         self.alreadyChecked = False
         self.SampleRTT = 1
@@ -109,6 +109,7 @@ class Conexao:
         # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
         print('recebido payload: %r' % payload)
+        print('=========== ack_no', ack_no)
 
         if (flags & FLAGS_FIN == FLAGS_FIN):
             self.callback(self, b'')
@@ -172,38 +173,43 @@ class Conexao:
                         self.TimeoutInterval = self.EstimatedRTT + 4 * self.DevRTT
 
                     
+                    
+
+                    
 
                 print('-2', len(self.seg_waiting_queue), len(self.seg_sended_queue))
                 print(self.seg_sended_length, self.win_size)
 
-                if len(self.seg_sended_queue):
-                    self.timer = asyncio.get_event_loop().call_later(
-                        self.TimeoutInterval, self._timeout)
-                # else:
-                    # self.win_size += MSS
 
                 b = self.seg_sended_length == 0
                 if a == True and b == True:
                     self.win_size += MSS
                     print('a:', a, 'b:', b)
                     print('new win size', self.win_size)
-                    
                 while len(self.seg_waiting_queue):
-                        response, src_addr, len_dados = self.seg_waiting_queue.popleft()
+                    response, src_addr, len_dados = self.seg_waiting_queue.popleft()
 
-                        if self.seg_sended_length + len_dados > self.win_size:
-                            self.seg_waiting_queue.appendleft((response, src_addr, len_dados))
-                            print('len:', self.seg_sended_length + len_dados, self.win_size)
-                            print('IF')
-                            break
-                       
-                        self.seg_sended_length += len_dados
-                        self.servidor.rede.enviar(response, src_addr)
-                        self.seg_sended_queue.append((time.time(), response, src_addr, len_dados))
-                          
-                        print('still have some waiting, new length is ',
-                              self.seg_sended_length)
+                    if self.seg_sended_length + len_dados > self.win_size:
+                        self.seg_waiting_queue.appendleft(
+                            (response, src_addr, len_dados))
+                        print('len:', self.seg_sended_length +
+                                len_dados, self.win_size)
+                        print('IF')
+                        break
 
+                    self.seg_sended_length += len_dados
+                    self.servidor.rede.enviar(response, src_addr)
+                    self.seg_sended_queue.append(
+                        (time.time(), response, src_addr, len_dados))
+
+                    print('still have some waiting, new length is ',
+                            self.seg_sended_length)
+
+                if len(self.seg_sended_queue):
+                    self.timer = asyncio.get_event_loop().call_later(
+                        self.TimeoutInterval, self._timeout)
+                # else:
+                    # self.win_size += MSS
                         
 
     # Os métodos abaixo fazem parte da API
@@ -235,7 +241,7 @@ class Conexao:
             response = fix_checksum(segment, dst_addr, src_addr)
 
             print('_', self.seg_sended_length, len_dados, self.win_size)
-            if (self.seg_sended_length + len_dados < self.win_size):
+            if (self.seg_sended_length + len_dados <= self.win_size):
                 self.servidor.rede.enviar(response, src_addr)
                 self.seg_sended_queue.append(
                     (time.time(), response, src_addr, len_dados))
